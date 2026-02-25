@@ -1,59 +1,74 @@
-from urllib import response
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-from openai import OpenAI
 import os
 import uuid
 from PyPDF2 import PdfReader
 import docx
-from dotenv import load_dotenv
 import google.generativeai as genai
-
-load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-app.config['UPLOAD_FOLDER'] = "uploads"
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Gemini API
-genai.configure(api_key="AIzaSyB7sXag3_ZENBvgs-wii8yd-LHFjCpOJx4")
-
-model = genai.GenerativeModel("models/gemini-flash-latest")
-
-# Stores extracted document text
 DOCUMENT_TEXT = ""
 
+# Gemini API
+genai.configure(api_key="YOUR_API_KEY_HERE")
+model = genai.GenerativeModel("models/gemini-flash-latest")
 
-# ============================
-# SERVE FRONT-END FILES
-# ============================
+
+# ==========================
+# SERVE DASHBOARD PAGE
+# ==========================
 
 @app.route("/")
-def serve_index():
-    return send_file("newindex.html")
+def home():
+    return send_from_directory(".", "index.html")
 
 
-@app.route("/newindex.html")
-def serve_index2():
-    return send_file("newindex.html")
+@app.route("/index.html")
+def index():
+    return send_from_directory(".", "index.html")
 
 
-@app.route("/newstyle.css")
-def css_file():
-    return send_file("newstyle.css")
+# ==========================
+# SERVE CHATBOT PAGE
+# ==========================
+
+@app.route("/chatbot.html")
+def chatbot_page():
+    return send_from_directory(".", "chatbot.html")
+
+
+# ==========================
+# SERVE CSS & JS FILES
+# ==========================
+
+@app.route("/styles.css")
+def styles():
+    return send_from_directory(".", "styles.css")
+
+
+@app.route("/chatbot.css")
+def chatbot_css():
+    return send_from_directory(".", "chatbot.css")
 
 
 @app.route("/newscript.js")
-def js_file():
-    return send_file("newscript.js")
+def script():
+    return send_from_directory(".", "newscript.js")
 
 
-# ============================
-# UPLOAD DOCUMENT + EXTRACT TEXT
-# ============================
+@app.route("/robot.jpg")
+def image():
+    return send_from_directory(".", "robot.jpg")
+
+
+# ==========================
+# DOCUMENT UPLOAD
+# ==========================
 
 @app.route("/upload-document", methods=["POST"])
 def upload_document():
@@ -64,38 +79,29 @@ def upload_document():
 
     file = request.files['file']
     filename = str(uuid.uuid4()) + "_" + file.filename
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
     text = ""
 
-    # PDF extraction
     if filename.lower().endswith(".pdf"):
         reader = PdfReader(filepath)
         for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+            t = page.extract_text()
+            if t:
+                text += t + "\n"
 
-    # DOCX extraction
     elif filename.lower().endswith(".docx"):
         doc = docx.Document(filepath)
-        for para in doc.paragraphs:
-            text += para.text + "\n"
+        for p in doc.paragraphs:
+            text += p.text + "\n"
 
-    # TXT extraction
     elif filename.lower().endswith(".txt"):
-        with open(filepath, "r", encoding="utf-8") as f:
-            text = f.read()
+        text = open(filepath, "r", encoding="utf-8").read()
 
     else:
         return jsonify({"error": "Unsupported file type"}), 400
 
-    text = text.strip()
-
-    # If there is already text from previous documents, append.
-    # This way, you can upload multiple documents and ask from all of them.
-    global DOCUMENT_TEXT
     if DOCUMENT_TEXT:
         DOCUMENT_TEXT += "\n\n" + text
     else:
@@ -103,13 +109,21 @@ def upload_document():
 
     return jsonify({"message": "Document uploaded successfully!"})
 
+
+# ==========================
+# CLEAR DOCUMENTS
+# ==========================
+
 @app.route("/clear-documents", methods=["POST"])
 def clear_documents():
     global DOCUMENT_TEXT
     DOCUMENT_TEXT = ""
     return jsonify({"message": "All documents cleared!"})
 
-# CHATBOT ANSWERS FROM DOCUMENT
+
+# ==========================
+# CHATBOT RESPONSE
+# ==========================
 
 @app.route("/chatbot", methods=["POST"])
 def chatbot():
@@ -122,28 +136,26 @@ def chatbot():
         return jsonify({"error": "No message provided"}), 400
 
     if not DOCUMENT_TEXT:
-        return jsonify({"response": "Please upload a document first so I can answer from it."})
+        return jsonify({"response": "Please upload a document first."})
 
     prompt = f"""
-You are an AI assistant. Answer ONLY using the information from the document below.
+Answer ONLY using the document content below.
 
-DOCUMENT CONTENT:
-------------------------------------------------
+DOCUMENT:
 {DOCUMENT_TEXT}
-------------------------------------------------
 
-RULES:
-- If the answer is in the document, extract and summarize it.
-- If the answer is NOT found, say: "I could not find this information in the uploaded document."
+QUESTION:
+{user_message}
 
-User question: {user_message}
+If answer not found, say:
+'I could not find this information in the uploaded document.'
 """
 
     response = model.generate_content(prompt)
-    ai_reply = response.text
+    return jsonify({"response": response.text})
 
-    return jsonify({"response": ai_reply})
 
+# ==========================
 
 if __name__ == "__main__":
     app.run(debug=True)
