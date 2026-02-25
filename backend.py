@@ -15,7 +15,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 DOCUMENT_TEXT = ""
 
 client = OpenAI(
-    api_key="AIzaSyB7sXag3_ZENBvgs-wii8yd-LHFjCpOJx4",
+    api_key="",
 
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
